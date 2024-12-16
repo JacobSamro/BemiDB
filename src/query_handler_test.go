@@ -466,6 +466,23 @@ func TestHandleQuery(t *testing.T) {
 			"description": {"oid", "description"},
 			"values":      {"10", ""},
 		},
+		// CASE
+		"SELECT CASE WHEN true THEN 'yes' ELSE 'no' END AS case": {
+			"description": {"case"},
+			"values":      {"yes"},
+		},
+		"SELECT CASE WHEN false THEN 'yes' ELSE 'no' END AS case": {
+			"description": {"case"},
+			"values":      {"no"},
+		},
+		"SELECT CASE WHEN true THEN 'one' WHEN false THEN 'two' ELSE 'three' END AS case": {
+			"description": {"case"},
+			"values":      {"one"},
+		},
+		"SELECT CASE WHEN (SELECT count(extname) FROM pg_catalog.pg_extension WHERE extname = 'bdr') > 0 THEN 'pgd' WHEN (SELECT count(*) FROM pg_replication_slots) > 0 THEN 'log' ELSE NULL END AS type": {
+			"description": {"type"},
+			"values":      {""},
+		},
 	}
 
 	for query, responses := range responsesByQuery {

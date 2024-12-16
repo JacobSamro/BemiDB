@@ -59,6 +59,12 @@ func (selectRemapper *SelectRemapper) RemapSetStatement(stmt *pgQuery.RawStmt) *
 func (selectRemapper *SelectRemapper) remapSelectStatement(selectStatement *pgQuery.SelectStmt, indentLevel int) *pgQuery.SelectStmt {
 	selectStatement = selectRemapper.remapTypeCastsInSelect(selectStatement)
 
+	// CASE - only process if we have CASE expressions
+	if hasCaseExpr := selectRemapper.hasCaseExpressions(selectStatement); hasCaseExpr {
+		selectRemapper.traceTreeTraversal("CASE expressions", indentLevel)
+		return selectRemapper.remapCaseExpressions(selectStatement, indentLevel)
+	}
+
 	// UNION
 	if selectStatement.FromClause == nil && selectStatement.Larg != nil && selectStatement.Rarg != nil {
 		selectRemapper.traceTreeTraversal("UNION left", indentLevel)
@@ -112,6 +118,57 @@ func (selectRemapper *SelectRemapper) remapSelectStatement(selectStatement *pgQu
 
 	selectStatement = selectRemapper.remapSelect(selectStatement, indentLevel) // recursive
 	return selectStatement
+}
+
+func (selectRemapper *SelectRemapper) hasCaseExpressions(selectStatement *pgQuery.SelectStmt) bool {
+	for _, target := range selectStatement.TargetList {
+		if target.GetResTarget().Val.GetCaseExpr() != nil {
+			return true
+		}
+	}
+	return false
+}
+
+func (selectRemapper *SelectRemapper) remapCaseExpressions(selectStatement *pgQuery.SelectStmt, indentLevel int) *pgQuery.SelectStmt {
+    for _, target := range selectStatement.TargetList {
+        if caseExpr := target.GetResTarget().Val.GetCaseExpr(); caseExpr != nil {
+            for _, when := range caseExpr.Args {
+                if whenClause := when.GetCaseWhen(); whenClause != nil {
+                    if whenClause.Expr != nil {
+                        if aExpr := whenClause.Expr.GetAExpr(); aExpr != nil {
+                            if subLink := aExpr.Lexpr.GetSubLink(); subLink != nil {
+                                selectRemapper.traceTreeTraversal("CASE WHEN left", indentLevel+1)
+                                subSelect := subLink.Subselect.GetSelectStmt()
+                                subSelect = selectRemapper.remapSelectStatement(subSelect, indentLevel+1)
+                            }
+                            if subLink := aExpr.Rexpr.GetSubLink(); subLink != nil {
+                                selectRemapper.traceTreeTraversal("CASE WHEN right", indentLevel+1)
+                                subSelect := subLink.Subselect.GetSelectStmt()
+                                subSelect = selectRemapper.remapSelectStatement(subSelect, indentLevel+1)
+                            }
+                        }
+                    }
+
+                    if whenClause.Result != nil {
+                        if subLink := whenClause.Result.GetSubLink(); subLink != nil {
+                            selectRemapper.traceTreeTraversal("CASE THEN", indentLevel+1)
+                            subSelect := subLink.Subselect.GetSelectStmt()
+                            subSelect = selectRemapper.remapSelectStatement(subSelect, indentLevel+1)
+                        }
+                    }
+                }
+            }
+
+            if caseExpr.Defresult != nil {
+                if subLink := caseExpr.Defresult.GetSubLink(); subLink != nil {
+                    selectRemapper.traceTreeTraversal("CASE ELSE", indentLevel+1)
+                    subSelect := subLink.Subselect.GetSelectStmt()
+                    subSelect = selectRemapper.remapSelectStatement(subSelect, indentLevel+1)
+                }
+            }
+        }
+    }
+    return selectStatement
 }
 
 // FROM PG_FUNCTION()
