@@ -499,7 +499,7 @@ func TestHandleQuery(t *testing.T) {
 			"description": {"type"},
 			"values":      {""},
 		},
-		"SELECT roles.oid AS id, roles.rolname AS name, roles.rolsuper AS is_superuser, CASE WHEN roles.rolsuper THEN true ELSE false END AS can_create_role FROM pg_catalog.pg_roles roles WHERE rolname = current_user": {
+		"SELECT roles.oid AS id, roles.rolname AS name, roles.rolsuper AS is_superuser, CASE WHEN roles.rolsuper THEN true ELSE roles.rolcreaterole END AS can_create_role FROM pg_catalog.pg_roles roles WHERE rolname = current_user": {
 			"description": {"id", "name", "is_superuser", "can_create_role"},
 			"values":      {},
 		},
