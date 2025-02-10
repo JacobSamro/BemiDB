@@ -617,7 +617,10 @@ func (queryHandler *QueryHandler) generateDataRow(rows *sql.Rows, cols []*sql.Co
 		case "float64", "float32":
 			var value sql.NullFloat64
 			valuePtrs[i] = &value
-		case "string", "[]uint8": // []uint8 is for uuid
+		case "string":
+			var value sql.NullString
+			valuePtrs[i] = &value
+		case "[]uint8": // uuid
 			var value sql.NullString
 			valuePtrs[i] = &value
 		case "bool":
