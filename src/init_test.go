@@ -5,7 +5,14 @@ import (
 	"os"
 )
 
-var TEST_PG_SCHEMA_COLUMNS = []PgSchemaColumn{
+var PUBLIC_TEST_TABLE_PG_SCHEMA_COLUMNS = []PgSchemaColumn{
+	{
+		ColumnName:       "id",
+		DataType:         "integer",
+		UdtName:          "int4",
+		IsNullable:       "NO",
+		NumericPrecision: "32",
+	},
 	{
 		ColumnName:             "bit_column",
 		DataType:               "bit",
@@ -269,8 +276,9 @@ var TEST_PG_SCHEMA_COLUMNS = []PgSchemaColumn{
 	},
 }
 
-var TEST_LOADED_ROWS = [][]string{
+var PUBLIC_TEST_TABLE_LOADED_ROWS = [][]string{
 	{
+		"1",                                    // id
 		"1",                                    // bit_column
 		"true",                                 // bool_column
 		"bpchar",                               // bpchar_column
@@ -312,6 +320,7 @@ var TEST_LOADED_ROWS = [][]string{
 		"(Toronto)",                            // user_defined_column
 	},
 	{
+		"2",                                // id
 		PG_NULL_STRING,                     // bit_column
 		"false",                            // bool_column
 		"",                                 // bpchar_column
@@ -354,26 +363,57 @@ var TEST_LOADED_ROWS = [][]string{
 	},
 }
 
+var TEST_SCHEMA_SIMPLE_TABLE_PG_SCHEMA_COLUMNS = []PgSchemaColumn{
+	{
+		ColumnName:             "id",
+		DataType:               "integer",
+		UdtName:                "int4",
+		IsNullable:             "NO",
+		OrdinalPosition:        "1",
+		CharacterMaximumLength: "0",
+		NumericPrecision:       "32",
+		NumericScale:           "0",
+		DatetimePrecision:      "0",
+		Namespace:              "pg_catalog",
+	},
+}
+
+var TEST_SCHEMA_SIMPLE_TABLE_LOADED_ROWS = [][]string{{}}
+
 func init() {
 	config := loadTestConfig()
 	icebergWriter := NewIcebergWriter(config)
 
-	for i := range TEST_PG_SCHEMA_COLUMNS {
-		TEST_PG_SCHEMA_COLUMNS[i].OrdinalPosition = IntToString(i + 1)
-		TEST_PG_SCHEMA_COLUMNS[i].IsNullable = "YES"
+	for i := range PUBLIC_TEST_TABLE_PG_SCHEMA_COLUMNS {
+		PUBLIC_TEST_TABLE_PG_SCHEMA_COLUMNS[i].OrdinalPosition = IntToString(i + 1)
+		if PUBLIC_TEST_TABLE_PG_SCHEMA_COLUMNS[i].IsNullable == "" {
+			PUBLIC_TEST_TABLE_PG_SCHEMA_COLUMNS[i].IsNullable = "YES"
+		}
 	}
 
 	i := 0
 	icebergWriter.Write(
 		IcebergSchemaTable{Schema: "public", Table: "test_table"},
-		TEST_PG_SCHEMA_COLUMNS,
+		PUBLIC_TEST_TABLE_PG_SCHEMA_COLUMNS,
 		func() [][]string {
 			if i > 0 {
 				return [][]string{}
 			}
 
 			i++
-			return TEST_LOADED_ROWS
+			return PUBLIC_TEST_TABLE_LOADED_ROWS
+		},
+	)
+	icebergWriter.Write(
+		IcebergSchemaTable{Schema: "test_schema", Table: "simple_table"},
+		TEST_SCHEMA_SIMPLE_TABLE_PG_SCHEMA_COLUMNS,
+		func() [][]string {
+			if i > 0 {
+				return [][]string{}
+			}
+
+			i++
+			return TEST_SCHEMA_SIMPLE_TABLE_LOADED_ROWS
 		},
 	)
 }

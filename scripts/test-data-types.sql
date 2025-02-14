@@ -182,5 +182,5 @@ SELECT
   numeric_scale,
   datetime_precision
 FROM information_schema.columns
-WHERE table_schema NOT IN ('information_schema', 'pg_catalog', 'pg_toast')
+WHERE table_schema = 'public'
 ORDER BY table_schema, table_name, ordinal_position;

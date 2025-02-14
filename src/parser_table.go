@@ -112,7 +112,7 @@ func (parser *ParserTable) MakePgStatUserTablesNode(schemaTables Set[IcebergSche
 	var rowsValues [][]string
 
 	for _, schemaTable := range schemaTables.Values() {
-		values := tableDef.Values
+		values := make([]string, len(tableDef.Values))
 
 		for i, col := range tableDef.Columns {
 			switch col.Name {
@@ -120,6 +120,8 @@ func (parser *ParserTable) MakePgStatUserTablesNode(schemaTables Set[IcebergSche
 				values[i] = schemaTable.Schema
 			case "relname":
 				values[i] = schemaTable.Table
+			default:
+				values[i] = tableDef.Values[i]
 			}
 		}
 		rowsValues = append(rowsValues, values)

@@ -182,12 +182,12 @@ func TestHandleQuery(t *testing.T) {
 			"description": {"oid", "opcmethod", "opcname", "opcnamespace", "opcowner", "opcfamily", "opcintype", "opcdefault", "opckeytype"},
 			"types":       {Uint32ToString(pgtype.OIDOID), Uint32ToString(pgtype.Int8OID), Uint32ToString(pgtype.TextOID), Uint32ToString(pgtype.Int8OID), Uint32ToString(pgtype.Int8OID), Uint32ToString(pgtype.Int8OID), Uint32ToString(pgtype.Int8OID), Uint32ToString(pgtype.BoolOID), Uint32ToString(pgtype.Int8OID)},
 		},
-		"SELECT schemaname, relname, n_live_tup FROM pg_stat_user_tables": {
+		"SELECT schemaname, relname, n_live_tup FROM pg_stat_user_tables WHERE schemaname = 'public'": {
 			"description": {"schemaname", "relname", "n_live_tup"},
 			"types":       {Uint32ToString(pgtype.TextOID), Uint32ToString(pgtype.TextOID), Uint32ToString(pgtype.Int8OID)},
 			"values":      {"public", "test_table", "1"},
 		},
-		"SELECT DISTINCT(nspname) FROM pg_catalog.pg_namespace WHERE nspname != 'information_schema' AND nspname != 'pg_catalog'": {
+		"SELECT DISTINCT(nspname) FROM pg_catalog.pg_namespace WHERE nspname != 'information_schema' AND nspname != 'pg_catalog' ORDER BY nspname LIMIT 1": {
 			"description": {"nspname"},
 			"types":       {Uint32ToString(pgtype.TextOID)},
 			"values":      {"public"},
@@ -200,7 +200,7 @@ func TestHandleQuery(t *testing.T) {
 		"SELECT n.nspname FROM pg_catalog.pg_namespace n LEFT OUTER JOIN pg_catalog.pg_description d ON d.objoid = n.oid ORDER BY n.oid DESC LIMIT 1": {
 			"description": {"nspname"},
 			"types":       {Uint32ToString(pgtype.TextOID)},
-			"values":      {"public"},
+			"values":      {"test_schema"},
 		},
 		"SELECT rel.oid FROM pg_class rel LEFT JOIN pg_extension ON rel.oid = pg_extension.oid ORDER BY rel.oid LIMIT 1;": {
 			"description": {"oid"},
@@ -255,12 +255,12 @@ func TestHandleQuery(t *testing.T) {
 		},
 
 		// Information schema
-		"SELECT * FROM information_schema.tables": {
+		"SELECT * FROM information_schema.tables WHERE table_schema = 'public'": {
 			"description": {"table_catalog", "table_schema", "table_name", "table_type", "self_referencing_column_name", "reference_generation", "user_defined_type_catalog", "user_defined_type_schema", "user_defined_type_name", "is_insertable_into", "is_typed", "commit_action", "TABLE_COMMENT"},
 			"types":       {Uint32ToString(pgtype.TextOID)},
 			"values":      {"memory", "public", "test_table", "BASE TABLE", "", "", "", "", "", "YES", "NO", "", ""},
 		},
-		"SELECT table_catalog, table_schema, table_name AS table FROM information_schema.tables": {
+		"SELECT table_catalog, table_schema, table_name AS table FROM information_schema.tables WHERE table_schema = 'public'": {
 			"description": {"table_catalog", "table_schema", "table"},
 			"types":       {Uint32ToString(pgtype.TextOID)},
 			"values":      {"memory", "public", "test_table"},
@@ -682,20 +682,20 @@ func TestHandleQuery(t *testing.T) {
 		},
 
 		// Type casts
-		"SELECT '\"public\".\"test_table\"'::regclass::oid AS oid": {
+		"SELECT '\"public\".\"test_table\"'::regclass::oid > 1270 AS oid": {
 			"description": {"oid"},
-			"types":       {Uint32ToString(pgtype.OIDOID)},
-			"values":      {"1270"},
+			"types":       {Uint32ToString(pgtype.BoolOID)},
+			"values":      {"true"},
 		},
-		"SELECT attrelid FROM pg_attribute WHERE attrelid = '\"public\".\"test_table\"'::regclass LIMIT 1": {
+		"SELECT attrelid > 1270 AS attrelid FROM pg_attribute WHERE attrelid = '\"public\".\"test_table\"'::regclass LIMIT 1": {
 			"description": {"attrelid"},
-			"types":       {Uint32ToString(pgtype.Int8OID)},
-			"values":      {"1270"},
+			"types":       {Uint32ToString(pgtype.BoolOID)},
+			"values":      {"true"},
 		},
 		"SELECT COUNT(*) AS count FROM pg_attribute WHERE attrelid = '\"public\".\"test_table\"'::regclass": {
 			"description": {"count"},
 			"types":       {Uint32ToString(pgtype.Int8OID)},
-			"values":      {"39"},
+			"values":      {"40"},
 		},
 		"SELECT objoid, classoid, objsubid, description FROM pg_description WHERE classoid = 'pg_class'::regclass": {
 			"description": {"objoid", "classoid", "objsubid", "description"},
@@ -912,7 +912,7 @@ func TestHandleQuery(t *testing.T) {
 			"types":       {Uint32ToString(pgtype.TextOID)},
 			"values":      {},
 		},
-		"SELECT tables.table_name FROM information_schema.tables": {
+		"SELECT tables.table_name FROM information_schema.tables WHERE table_schema = 'public'": {
 			"description": {"table_name"},
 			"types":       {Uint32ToString(pgtype.TextOID)},
 			"values":      {"test_table"},

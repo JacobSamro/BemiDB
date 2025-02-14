@@ -67,6 +67,7 @@ func (remapper *QueryRemapperTable) RemapTable(node *pgQuery.Node) *pgQuery.Node
 
 		// pg_stat_user_tables -> return hard-coded table info
 		case PG_TABLE_PG_STAT_USER_TABLES:
+			remapper.reloadIceberSchemaTables()
 			return parser.MakePgStatUserTablesNode(remapper.icebergSchemaTables, qSchemaTable.Alias)
 
 		// pg_collation -> return hard-coded collation (encoding) info
@@ -238,6 +239,8 @@ func (remapper *QueryRemapperTable) reloadIceberSchemaTables() {
 				sqlColumns = append(sqlColumns, icebergTableField.ToSql())
 			}
 
+			_, err = remapper.duckdb.ExecContext(ctx, "CREATE SCHEMA IF NOT EXISTS "+icebergSchemaTable.Schema, nil)
+			PanicIfError(err)
 			_, err = remapper.duckdb.ExecContext(ctx, "CREATE TABLE IF NOT EXISTS "+icebergSchemaTable.String()+" ("+strings.Join(sqlColumns, ", ")+")", nil)
 			PanicIfError(err)
 		}
