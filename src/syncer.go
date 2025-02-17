@@ -436,8 +436,53 @@ func (syncer *Syncer) saveTableMetadata(pgSchemaTable PgSchemaTable, metadata Ta
 }
 
 func (syncer *Syncer) hasTableChanged(conn *pgx.Conn, pgSchemaTable PgSchemaTable, metadata TableMetadata) bool {
+	// Check for changes using updatedAt
+	if hasTimestampColumn := syncer.hasUpdateTimestampColumn(conn, pgSchemaTable); hasTimestampColumn {
+		return syncer.hasChangesUsingTimestamp(conn, pgSchemaTable, metadata.LastSyncTime)
+	}
+
+	// Fallback to checking row count and content hash
 	currentChecksum := syncer.calculateTableChecksum(conn, pgSchemaTable)
 	return currentChecksum != metadata.Checksum
+}
+
+func (syncer *Syncer) hasUpdateTimestampColumn(conn *pgx.Conn, pgSchemaTable PgSchemaTable) bool {
+	query := `
+		SELECT EXISTS (
+			SELECT 1 
+			FROM information_schema.columns 
+			WHERE table_schema = $1 
+			AND table_name = $2 
+			AND column_name = 'updatedAt'
+			AND data_type IN ('timestamp', 'timestamp with time zone', 'timestamp without time zone')
+		)`
+
+	var exists bool
+	err := conn.QueryRow(context.Background(), query, pgSchemaTable.Schema, pgSchemaTable.Table).Scan(&exists)
+	if err != nil {
+		return false
+	}
+	return exists
+}
+
+func (syncer *Syncer) hasChangesUsingTimestamp(conn *pgx.Conn, pgSchemaTable PgSchemaTable, since time.Time) bool {
+	// Check for any rows created or updated since last sync
+	query := fmt.Sprintf(`
+		SELECT EXISTS (
+			SELECT 1 
+			FROM %s.%s 
+			WHERE "updatedAt" > $1
+			OR "createdAt" > $1
+		)`,
+		pgSchemaTable.Schema, pgSchemaTable.Table)
+	
+	var hasChanges bool
+	err := conn.QueryRow(context.Background(), query, since).Scan(&hasChanges)
+	if err != nil {
+		return false
+	}
+	
+	return hasChanges
 }
 
 func (syncer *Syncer) calculateTableChecksum(conn *pgx.Conn, pgSchemaTable PgSchemaTable) string {
@@ -453,5 +498,3 @@ func (syncer *Syncer) calculateTableChecksum(conn *pgx.Conn, pgSchemaTable PgSch
 	
 	return fmt.Sprintf("%d:%s", count, checksum)
 }
-
-
