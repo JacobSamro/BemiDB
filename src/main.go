@@ -9,6 +9,9 @@ import (
 const VERSION = "0.32.2"
 
 func main() {
+	var since string
+	flag.StringVar(&since, "since", "", "Sync changes since this time (e.g., '24h' or ISO timestamp)")
+	
 	config := LoadConfig()
 
 	if len(flag.Args()) == 0 {
@@ -29,12 +32,12 @@ func main() {
 			}
 			LogInfo(config, "Starting sync loop with interval:", config.Pg.SyncInterval)
 			for {
-				syncFromPg(config)
+				syncFromPg(config, since)
 				LogInfo(config, "Sleeping for", config.Pg.SyncInterval)
 				time.Sleep(duration)
 			}
 		} else {
-			syncFromPg(config)
+			syncFromPg(config, since)
 		}
 	case "version":
 		fmt.Println("BemiDB version:", VERSION)
@@ -67,8 +70,31 @@ func start(config *Config) {
 	}
 }
 
-func syncFromPg(config *Config) {
+func syncFromPg(config *Config, since string) {
 	syncer := NewSyncer(config)
-	syncer.SyncFromPostgres()
+	
+	var options *SyncOptions
+	if since != "" {
+		options = &SyncOptions{}
+		
+		var err error
+		duration, err := time.ParseDuration(since)
+		if err == nil {
+			options.Since = time.Now().Add(-duration)
+			LogDebug(config, "Syncing changes since:", options.Since.Format(time.RFC3339))
+		} else {
+			// Try parsing as ISO timestamp
+			t, err := time.Parse(time.RFC3339, since)
+			if err != nil {
+				panic("Invalid time format for --since. Use duration (e.g., '24h') or ISO timestamp")
+			}
+			options.Since = t
+			LogDebug(config, "Syncing changes since:", options.Since.Format(time.RFC3339))
+		}
+	} else {
+		LogDebug(config, "No sync options provided, performing full sync")
+	}
+	
+	syncer.SyncFromPostgres(options)
 	LogInfo(config, "Sync from PostgreSQL completed successfully.")
 }

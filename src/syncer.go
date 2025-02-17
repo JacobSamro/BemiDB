@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -33,6 +34,16 @@ type TelemetryData struct {
 	DbConnHash string `json:"dbConnHash"`
 }
 
+type SyncOptions struct {
+	Since time.Time
+}
+
+type TableMetadata struct {
+	LastSyncTime time.Time `json:"lastSyncTime"`
+	RowCount     int64     `json:"rowCount"`
+	Checksum     string    `json:"checksum"`
+}
+
 func NewSyncer(config *Config) *Syncer {
 	if config.Pg.DatabaseUrl == "" {
 		panic("Missing PostgreSQL database URL")
@@ -43,7 +54,7 @@ func NewSyncer(config *Config) *Syncer {
 	return &Syncer{config: config, icebergWriter: icebergWriter, icebergReader: icebergReader}
 }
 
-func (syncer *Syncer) SyncFromPostgres() {
+func (syncer *Syncer) SyncFromPostgres(options *SyncOptions) {
 	ctx := context.Background()
 	databaseUrl := syncer.urlEncodePassword(syncer.config.Pg.DatabaseUrl)
 	syncer.sendTelemetry(databaseUrl)
@@ -60,7 +71,7 @@ func (syncer *Syncer) SyncFromPostgres() {
 		for _, pgSchemaTable := range syncer.listPgSchemaTables(conn, schema) {
 			if syncer.shouldSyncTable(pgSchemaTable) {
 				pgSchemaTables = append(pgSchemaTables, pgSchemaTable)
-				syncer.syncFromPgTable(conn, pgSchemaTable)
+				syncer.syncFromPgTable(conn, pgSchemaTable, options)
 			}
 		}
 	}
@@ -175,8 +186,20 @@ func (syncer *Syncer) listPgSchemaTables(conn *pgx.Conn, schema string) []PgSche
 	return pgSchemaTables
 }
 
-func (syncer *Syncer) syncFromPgTable(conn *pgx.Conn, pgSchemaTable PgSchemaTable) {
+func (syncer *Syncer) syncFromPgTable(conn *pgx.Conn, pgSchemaTable PgSchemaTable, options *SyncOptions) {
 	LogInfo(syncer.config, "Syncing "+pgSchemaTable.String()+"...")
+
+	// Get table metadata for incremental sync
+	metadata, err := syncer.getTableMetadata(pgSchemaTable)
+	PanicIfError(err)
+
+	// If incremental sync is requested and table hasn't changed, skip it
+	if options != nil && !options.Since.IsZero() {
+		if metadata.LastSyncTime.After(options.Since) && !syncer.hasTableChanged(conn, pgSchemaTable, metadata) {
+			LogInfo(syncer.config, "Skipping "+pgSchemaTable.String()+" - no changes since last sync")
+			return
+		}
+	}
 
 	csvFile, err := syncer.exportPgTableToCsv(conn, pgSchemaTable)
 	PanicIfError(err)
@@ -222,6 +245,13 @@ func (syncer *Syncer) syncFromPgTable(conn *pgx.Conn, pgSchemaTable PgSchemaTabl
 
 		return rows
 	})
+
+	// Update table metadata after successful sync
+	metadata.LastSyncTime = time.Now()
+	metadata.RowCount = int64(totalRowCount)
+	metadata.Checksum = syncer.calculateTableChecksum(conn, pgSchemaTable)
+	err = syncer.saveTableMetadata(pgSchemaTable, metadata)
+	PanicIfError(err)
 }
 
 func (syncer *Syncer) pgTableSchemaColumns(conn *pgx.Conn, pgSchemaTable PgSchemaTable, csvHeader []string) []PgSchemaColumn {
@@ -373,3 +403,55 @@ func (syncer *Syncer) sendTelemetry(databaseUrl string) {
 	client := http.Client{Timeout: 5 * time.Second}
 	_, _ = client.Post("http://api.bemidb.com/api/analytics", "application/json", bytes.NewBuffer(jsonData))
 }
+
+func (syncer *Syncer) getTableMetadata(pgSchemaTable PgSchemaTable) (TableMetadata, error) {
+	metadataPath := filepath.Join(syncer.config.StoragePath, "metadata", pgSchemaTable.Schema, pgSchemaTable.Table+".json")
+	data, err := os.ReadFile(metadataPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return TableMetadata{}, nil
+		}
+		return TableMetadata{}, err
+	}
+
+	var metadata TableMetadata
+	err = json.Unmarshal(data, &metadata)
+	return metadata, err
+}
+
+func (syncer *Syncer) saveTableMetadata(pgSchemaTable PgSchemaTable, metadata TableMetadata) error {
+	metadataDir := filepath.Join(syncer.config.StoragePath, "metadata", pgSchemaTable.Schema)
+	err := os.MkdirAll(metadataDir, 0755)
+	if err != nil {
+		return err
+	}
+
+	data, err := json.Marshal(metadata)
+	if err != nil {
+		return err
+	}
+
+	metadataPath := filepath.Join(metadataDir, pgSchemaTable.Table+".json")
+	return os.WriteFile(metadataPath, data, 0644)
+}
+
+func (syncer *Syncer) hasTableChanged(conn *pgx.Conn, pgSchemaTable PgSchemaTable, metadata TableMetadata) bool {
+	currentChecksum := syncer.calculateTableChecksum(conn, pgSchemaTable)
+	return currentChecksum != metadata.Checksum
+}
+
+func (syncer *Syncer) calculateTableChecksum(conn *pgx.Conn, pgSchemaTable PgSchemaTable) string {
+	query := fmt.Sprintf("SELECT COUNT(*), SUM(hashtext(CAST(t.* AS text))) FROM %s.%s t",
+		pgSchemaTable.Schema, pgSchemaTable.Table)
+	
+	var count int64
+	var checksum string
+	err := conn.QueryRow(context.Background(), query).Scan(&count, &checksum)
+	if err != nil {
+		return ""
+	}
+	
+	return fmt.Sprintf("%d:%s", count, checksum)
+}
+
+
